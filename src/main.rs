@@ -2,10 +2,11 @@ mod config;
 mod mqtt_client;
 mod pipeline;
 
-use log::{debug, info};
+use log::{debug, info, error};
+use anyhow;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     debug!("1");
@@ -14,7 +15,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Loaded conf = {:?}", conf);
 
     let _ = tokio::spawn(async move {
-        pipeline::start_pipeline(conf).await.unwrap();
+        if let Err(e) = pipeline::start_pipeline(conf).await {
+            error!("Pipeline error: {:?}", e);
+        }
     });
 
     debug!("2");
