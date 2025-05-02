@@ -1,8 +1,9 @@
 use crate::config::CloudConfig;
 use log::{debug, error, info};
-use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
+use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, QoS, Packet};
 use std::time::Duration;
 use tokio::sync::mpsc;
+use anyhow;
 
 pub struct MqttClient {
     cfg: CloudConfig,
@@ -34,24 +35,36 @@ impl MqttClient {
         self.event_tx.clone()
     }
 
-    pub async fn subscribe(&self) {
+    pub async fn subscribe(&self) -> anyhow::Result<()> {
         let topic = self.cfg.sub_cloud_topic.clone();
         info!("Subscribing to {} from cloud", topic);
+
         self.client
             .subscribe(&topic, QoS::AtMostOnce)
             .await
-            .unwrap();
+            .map_err(|e| {
+                error!("Failed to subscribe to topic: {e}");
+                anyhow::anyhow!(e)
+            })?;
+
         info!("Subscribed to {} from cloud", topic);
+        Ok(())
     }
 
-    pub async fn publish(&self, payload: &str) {
+    pub async fn publish(&self, payload: &str) -> anyhow::Result<()> {
         let topic = self.cfg.pub_cloud_topic.clone();
         info!("Publishing to {} to {}", payload, topic);
+
         self.client
             .publish(&topic, QoS::AtLeastOnce, false, payload)
             .await
-            .unwrap();
+            .map_err(|e| {
+                error!("Failed to publish to topic: {e}");
+                anyhow::anyhow!(e)
+            })?;
+
         info!("Published to {} to {}", payload, topic);
+        Ok(())
     }
 
     pub async fn handle_events(mut eventloop: EventLoop, event_tx: mpsc::Sender<String>) {
@@ -59,12 +72,17 @@ impl MqttClient {
             match eventloop.poll().await {
                 Ok(notification) => {
                     debug!("Event = {notification:?}");
-                    match notification {
-                        rumqttc::Event::Incoming(rumqttc::Packet::Publish(p)) => {
-                            let payload = String::from_utf8(p.payload.to_vec()).unwrap();
-                            event_tx.send(payload).await.unwrap();
+                    if let Event::Incoming(Packet::Publish(p)) = notification {
+                        match String::from_utf8(p.payload.to_vec()) {
+                            Ok(payload) => {
+                                if let Err(e) = event_tx.send(payload).await {
+                                    error!("Failed to send payload: {:?}", e);
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to convert payload to string: {:?}", e);
+                            }
                         }
-                        _ => {}
                     }
                 }
                 Err(err) => {
