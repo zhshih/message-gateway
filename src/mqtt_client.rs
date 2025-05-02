@@ -2,8 +2,10 @@ use crate::config::CloudConfig;
 use anyhow;
 use log::{debug, error, info};
 use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 pub struct MqttClient {
     cfg: CloudConfig,
@@ -67,22 +69,41 @@ impl MqttClient {
         Ok(())
     }
 
-    pub async fn handle_events(mut eventloop: EventLoop, event_tx: mpsc::Sender<String>) {
+    pub async fn handle_events(
+        mut eventloop: EventLoop,
+        event_tx: mpsc::Sender<String>,
+        shutdown_token: Arc<CancellationToken>,
+    ) {
         loop {
-            match eventloop.poll().await {
-                Ok(notification) => {
-                    debug!("Event = {notification:?}");
-                    match notification {
-                        Event::Incoming(Packet::Publish(p)) => {
-                            let payload = String::from_utf8(p.payload.to_vec()).unwrap();
-                            event_tx.send(payload).await.unwrap();
-                        }
-                        _ => {}
-                    }
-                }
-                Err(err) => {
-                    error!("Error = {err:?}");
+            tokio::select! {
+                _ = shutdown_token.cancelled() => {
+                    debug!("Shutdown signal received");
                     break;
+                }
+                result = eventloop.poll() => {
+                    match result {
+                        Ok(event) => {
+                            debug!("Event received: {event:?}");
+
+                            if let Event::Incoming(Packet::Publish(p)) = event {
+                                match String::from_utf8(p.payload.to_vec()) {
+                                    Ok(payload) => {
+                                        if let Err(e) = event_tx.send(payload).await {
+                                            error!("Failed to send event: {e}");
+                                            break;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to parse payload as UTF-8: {e}");
+                                    }
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            error!("Event loop error: {err:?}");
+                            break;
+                        }
+                    }
                 }
             }
         }

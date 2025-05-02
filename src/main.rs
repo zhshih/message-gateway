@@ -4,6 +4,8 @@ mod pipeline;
 
 use anyhow;
 use log::{debug, error, info};
+use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -14,15 +16,23 @@ async fn main() -> anyhow::Result<()> {
     let conf = config::load_config();
     info!("Loaded conf = {:?}", conf);
 
-    let _ = tokio::spawn(async move {
-        if let Err(e) = pipeline::start_pipeline(conf).await {
+    let shutdown_token = Arc::new(CancellationToken::new());
+
+    let shutdown_token_clone = shutdown_token.clone();
+    let pipeline_handle = tokio::spawn(async move {
+        if let Err(e) = pipeline::start_pipeline(conf, shutdown_token_clone).await {
             error!("Pipeline error: {:?}", e);
         }
     });
 
     debug!("2");
 
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-    }
+    tokio::signal::ctrl_c().await?;
+    info!("Starting shutdown...");
+    shutdown_token.cancel();
+
+    pipeline_handle.await?;
+
+    info!("Completed Shutdown");
+    Ok(())
 }
