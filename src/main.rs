@@ -3,9 +3,10 @@ mod mqtt_client;
 mod pipeline;
 
 use log::{debug, info};
+use anyhow;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     debug!("1");
