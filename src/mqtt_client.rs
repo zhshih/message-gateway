@@ -8,13 +8,12 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 pub struct MqttClient {
-    cfg: CloudConfig,
     client: AsyncClient,
-    event_tx: mpsc::Sender<String>,
+    event_tx: mpsc::Sender<(String, String)>,
 }
 
 impl MqttClient {
-    pub fn new(cfg: CloudConfig) -> (Self, EventLoop, mpsc::Receiver<String>) {
+    pub fn new(cfg: CloudConfig) -> (Self, EventLoop, mpsc::Receiver<(String, String)>) {
         let client_id = cfg.client_id.clone();
         let broker = cfg.broker.clone();
         let port = cfg.port.clone();
@@ -23,17 +22,16 @@ impl MqttClient {
         mqtt_opts.set_credentials(cfg.username.clone(), cfg.password.clone());
 
         let (client, eventloop) = AsyncClient::new(mqtt_opts, 10);
-        let (tx, rx) = mpsc::channel(32);
+        let (tx, rx) = mpsc::channel::<(String, String)>(32);
 
         let service = MqttClient {
-            cfg,
             client,
             event_tx: tx,
         };
         (service, eventloop, rx)
     }
 
-    pub fn event_sender(&self) -> mpsc::Sender<String> {
+    pub fn event_sender(&self) -> mpsc::Sender<(String, String)> {
         self.event_tx.clone()
     }
 
@@ -58,12 +56,11 @@ impl MqttClient {
         Ok(())
     }
 
-    pub async fn publish(&self, payload: &str) -> anyhow::Result<()> {
-        let topic = self.cfg.pub_cloud_topic.clone();
+    pub async fn publish(&self, topic: &str, payload: &str) -> anyhow::Result<()> {
         info!("Publishing to {} to {}", payload, topic);
 
         self.client
-            .publish(&topic, QoS::AtLeastOnce, false, payload)
+            .publish(topic, QoS::AtLeastOnce, false, payload)
             .await
             .map_err(|e| {
                 error!("Failed to publish to topic: {e}");
@@ -77,7 +74,7 @@ impl MqttClient {
     pub async fn handle_events(
         client: AsyncClient,
         mut eventloop: EventLoop,
-        event_tx: mpsc::Sender<String>,
+        event_tx: mpsc::Sender<(String, String)>,
         topics: Vec<String>,
         shutdown_token: Arc<CancellationToken>,
     ) {
@@ -96,7 +93,8 @@ impl MqttClient {
                                 Event::Incoming(Packet::Publish(p)) => {
                                     match String::from_utf8(p.payload.to_vec()) {
                                         Ok(payload) => {
-                                            if let Err(e) = event_tx.send(payload).await {
+                                            debug!("Received payload: {}, from {}", payload, p.topic);
+                                            if let Err(e) = event_tx.send((p.topic, payload)).await {
                                                 error!("Failed to send event: {e}");
                                                 break;
                                             }

@@ -9,20 +9,18 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 pub struct RedisClient {
-    cfg: EdgeConfig,
     client: Client,
-    event_tx: mpsc::Sender<String>,
+    event_tx: mpsc::Sender<(String, String)>,
 }
 
 impl RedisClient {
-    pub async fn new(cfg: EdgeConfig) -> anyhow::Result<(Self, mpsc::Receiver<String>)> {
+    pub async fn new(cfg: EdgeConfig) -> anyhow::Result<(Self, mpsc::Receiver<(String, String)>)> {
         let connection_url = format!("redis://{}:{}/{}", cfg.broker, cfg.port, cfg.db);
 
         let client = Client::open(connection_url).context("Failed to open Redis connection")?;
-        let (tx, rx) = mpsc::channel(32);
+        let (tx, rx) = mpsc::channel::<(String, String)>(32);
 
         let redis_client = RedisClient {
-            cfg,
             client,
             event_tx: tx,
         };
@@ -41,12 +39,11 @@ impl RedisClient {
         Ok(pubsub_conn)
     }
 
-    pub fn message_sender(&self) -> mpsc::Sender<String> {
+    pub fn message_sender(&self) -> mpsc::Sender<(String, String)> {
         self.event_tx.clone()
     }
 
-    pub async fn publish(&self, payload: &str) -> anyhow::Result<()> {
-        let topic = self.cfg.pub_edge_topic.clone();
+    pub async fn publish(&self, topic: &str, payload: &str) -> anyhow::Result<()> {
         info!("Publishing to {} to {}", payload, topic);
 
         let mut publish_conn = self
@@ -63,7 +60,7 @@ impl RedisClient {
 
     pub async fn handle_messages(
         mut pubsub_conn: PubSub,
-        event_tx: mpsc::Sender<String>,
+        event_tx: mpsc::Sender<(String, String)>,
         shutdown_token: Arc<CancellationToken>,
     ) {
         let mut pubsub_stream = pubsub_conn.on_message();
@@ -76,9 +73,9 @@ impl RedisClient {
                             debug!("Message received: {msg:?}");
                             match msg.get_payload::<String>() {
                                 Ok(payload) => {
-                                    // let channel = msg.get_channel_name();
-                                    // debug!("Received on {}: {}", channel, payload);
-                                    if let Err(e) = event_tx.send(payload).await {
+                                    let channel = msg.get_channel_name();
+                                    debug!("Received payload: {}, from {}", channel, payload);
+                                    if let Err(e) = event_tx.send((channel.into(), payload)).await {
                                         error!("Failed to send event: {e}");
                                         break;
                                     }

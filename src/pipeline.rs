@@ -39,7 +39,7 @@ pub async fn start_pipeline(
     ));
 
     info!("Start process task");
-    let (cloud_processed_tx, mut cloud_processed_rx) = mpsc::channel(32);
+    let (cloud_processed_tx, mut cloud_processed_rx) = mpsc::channel::<(String, String)>(32);
     let cloud_process_task = spawn_processor(
         "cloud",
         cloud_source_rx,
@@ -47,7 +47,7 @@ pub async fn start_pipeline(
         shutdown_token.clone(),
     );
 
-    let (edge_processed_tx, mut edge_processed_rx) = mpsc::channel(32);
+    let (edge_processed_tx, mut edge_processed_rx) = mpsc::channel::<(String, String)>(32);
     let edge_process_task = spawn_processor(
         "edge",
         edge_source_rx,
@@ -65,16 +65,14 @@ pub async fn start_pipeline(
                     debug!("Sink task received shutdown signal.");
                     break;
                 }
-                maybe_msg = cloud_processed_rx.recv() => {
-                    match maybe_msg {
-                        Some(msg) => {
-                            debug!("Received processed message: {msg}");
-
-                            debug!("Publishing sink message: {msg}");
-                            if let Err(e) = cloud_client.publish(&msg).await {
+                maybe_processed_info = cloud_processed_rx.recv() => {
+                    match maybe_processed_info {
+                        Some((topic, msg)) => {
+                            debug!("Publishing sink message: {msg} to {topic}");
+                            if let Err(e) = cloud_client.publish(&topic, &msg).await {
                                 error!("Failed to publish message: {:?}", e);
                             } else {
-                                debug!("Published sink message: {msg}");
+                                debug!("Published sink message");
                             }
                         }
                         None => {
@@ -99,16 +97,14 @@ pub async fn start_pipeline(
                     debug!("Sink task received shutdown signal.");
                     break;
                 }
-                maybe_msg = edge_processed_rx.recv() => {
-                    match maybe_msg {
-                        Some(msg) => {
-                            debug!("Received processed message: {msg}");
-
-                            debug!("Publishing sink message: {msg}");
-                            if let Err(e) = edge_client.publish(&msg).await {
+                maybe_processed_info = edge_processed_rx.recv() => {
+                    match maybe_processed_info {
+                        Some((topic, msg)) => {
+                            debug!("Publishing sink message: {msg} to {topic}");
+                            if let Err(e) = edge_client.publish(&topic, &msg).await {
                                 error!("Failed to publish message: {:?}", e);
                             } else {
-                                debug!("Published sink message: {msg}");
+                                debug!("Published sink message");
                             }
                         }
                         None => {
@@ -135,14 +131,13 @@ pub async fn start_pipeline(
 
 fn spawn_processor(
     name: &str,
-    mut source_rx: mpsc::Receiver<String>,
-    processed_tx: mpsc::Sender<String>,
+    mut source_rx: mpsc::Receiver<(String, String)>,
+    processed_tx: mpsc::Sender<(String, String)>,
     shutdown_token: Arc<CancellationToken>,
 ) -> JoinHandle<()> {
     let name = name.to_string();
     tokio::spawn(async move {
         info!("Launching {name}-processor task");
-        let mut seq_id = 0;
 
         loop {
             tokio::select! {
@@ -150,11 +145,18 @@ fn spawn_processor(
                     debug!("{name}-processor received shutdown signal");
                     break;
                 }
-                Some(msg) = source_rx.recv() => {
-                    seq_id += 1;
-                    let processed = format!("{msg} seq_id = {seq_id}");
-                    debug!("Processed message from {name}: {processed}");
-                    if processed_tx.send(processed).await.is_err() {
+                Some((mut topic, msg)) = source_rx.recv() => {
+                    if name == "cloud" {
+                        if let Some(_) = topic.find("/into-edge") {
+                            topic = topic.replace("/into-edge", "");
+                        }
+                    } else if name == "edge" {
+                        if let Some(_) = topic.find("/outof-edge") {
+                            topic = topic.replace("/outof-edge", "");
+                        }
+                    }
+                    debug!("Processed message from {name}: ({topic}, {msg})");
+                    if processed_tx.send((topic, msg)).await.is_err() {
                         error!("{name} processor failed to send message");
                         break;
                     }
