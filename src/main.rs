@@ -1,6 +1,7 @@
 mod config;
 mod mqtt_client;
 mod pipeline;
+mod redis_client;
 
 use anyhow;
 use log::{debug, error, info};
@@ -13,14 +14,15 @@ async fn main() -> anyhow::Result<()> {
 
     debug!("1");
 
-    let conf = config::load_config();
-    info!("Loaded conf = {:?}", conf);
+    let (cloud_conf, edge_conf) = config::load_config();
+    info!("Loaded conf = ({:?}, {:?}", cloud_conf, edge_conf);
 
     let shutdown_token = Arc::new(CancellationToken::new());
 
     let shutdown_token_clone = shutdown_token.clone();
     let pipeline_handle = tokio::spawn(async move {
-        if let Err(e) = pipeline::start_pipeline(conf, shutdown_token_clone).await {
+        if let Err(e) = pipeline::start_pipeline(cloud_conf, edge_conf, shutdown_token_clone).await
+        {
             error!("Pipeline error: {:?}", e);
         }
     });
