@@ -1,6 +1,6 @@
 use log::info;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CloudConfig {
     pub client_id: String,
     pub broker: String,

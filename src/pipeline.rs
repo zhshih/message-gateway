@@ -10,16 +10,23 @@ pub async fn start_pipeline(
     cfg: CloudConfig,
     shutdown_token: Arc<CancellationToken>,
 ) -> anyhow::Result<()> {
-    let (cloud_client, eventloop, mut source_rx) = MqttClient::new(cfg);
+    let cfg_clone = cfg.clone();
+    let (cloud_client, eventloop, mut source_rx) = MqttClient::new(cfg_clone);
     let (processed_tx, mut processed_rx) = mpsc::channel::<String>(32);
 
-    info!("Start source job");
-    cloud_client.subscribe().await?;
+    let cfg_clone = cfg.clone();
+    let cloud_sub_topics = vec![cfg_clone.sub_cloud_topic.clone()];
 
+    info!("Start source job");
+    cloud_client.subscribe(cloud_sub_topics).await?;
+
+    let cloud_sub_topics = vec![cfg_clone.sub_cloud_topic.clone()];
     let shutdown_token_clone = shutdown_token.clone();
     let source_task = tokio::spawn(MqttClient::handle_events(
+        cloud_client.client(),
         eventloop,
         cloud_client.event_sender(),
+        cloud_sub_topics,
         shutdown_token_clone,
     ));
 

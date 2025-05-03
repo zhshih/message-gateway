@@ -37,19 +37,24 @@ impl MqttClient {
         self.event_tx.clone()
     }
 
-    pub async fn subscribe(&self) -> anyhow::Result<()> {
-        let topic = self.cfg.sub_cloud_topic.clone();
-        info!("Subscribing to {} from cloud", topic);
+    pub fn client(&self) -> AsyncClient {
+        return self.client.clone();
+    }
 
-        self.client
-            .subscribe(&topic, QoS::AtMostOnce)
-            .await
-            .map_err(|e| {
-                error!("Failed to subscribe to topic: {e}");
-                anyhow::anyhow!(e)
-            })?;
+    pub async fn subscribe(&self, topics: Vec<String>) -> anyhow::Result<()> {
+        for topic in topics {
+            info!("Subscribing to {} from cloud", topic);
 
-        info!("Subscribed to {} from cloud", topic);
+            self.client
+                .subscribe(&topic, QoS::AtMostOnce)
+                .await
+                .map_err(|e| {
+                    error!("Failed to subscribe to topic: {e}");
+                    anyhow::anyhow!(e)
+                })?;
+
+            info!("Subscribed to {} from cloud", topic);
+        }
         Ok(())
     }
 
@@ -70,8 +75,10 @@ impl MqttClient {
     }
 
     pub async fn handle_events(
+        client: AsyncClient,
         mut eventloop: EventLoop,
         event_tx: mpsc::Sender<String>,
+        topics: Vec<String>,
         shutdown_token: Arc<CancellationToken>,
     ) {
         loop {
@@ -85,23 +92,36 @@ impl MqttClient {
                         Ok(event) => {
                             debug!("Event received: {event:?}");
 
-                            if let Event::Incoming(Packet::Publish(p)) = event {
-                                match String::from_utf8(p.payload.to_vec()) {
-                                    Ok(payload) => {
-                                        if let Err(e) = event_tx.send(payload).await {
-                                            error!("Failed to send event: {e}");
-                                            break;
+                            match event {
+                                Event::Incoming(Packet::Publish(p)) => {
+                                    match String::from_utf8(p.payload.to_vec()) {
+                                        Ok(payload) => {
+                                            if let Err(e) = event_tx.send(payload).await {
+                                                error!("Failed to send event: {e}");
+                                                break;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Failed to parse payload as UTF-8: {e}");
                                         }
                                     }
-                                    Err(e) => {
-                                        error!("Failed to parse payload as UTF-8: {e}");
+                                }
+                                Event::Incoming(Packet::ConnAck(_)) => {
+                                    for topic in &topics {
+                                        if let Err(e) = client.subscribe(topic, QoS::AtMostOnce).await {
+                                            error!("Failed to re-subscribe to topic {topic}: {e}");
+                                        } else {
+                                            info!("Re-subscribed to topic {topic}");
+                                        }
                                     }
                                 }
+                                _ => {}
                             }
                         }
                         Err(err) => {
                             error!("Event loop error: {err:?}");
-                            break;
+                            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                            continue;
                         }
                     }
                 }
