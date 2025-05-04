@@ -7,7 +7,7 @@ pub struct CloudConfig {
     pub port: u16,
     pub username: String,
     pub password: String,
-    pub sub_cloud_topic: String,
+    pub sub_cloud_topic: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -16,7 +16,7 @@ pub struct EdgeConfig {
     pub port: u16,
     pub db: u16,
     pub _password: String,
-    pub sub_edge_topic: String,
+    pub sub_edge_topic: Vec<String>,
 }
 
 pub fn load_config() -> (CloudConfig, EdgeConfig) {
@@ -28,14 +28,14 @@ pub fn load_config() -> (CloudConfig, EdgeConfig) {
             port: 1883,
             username: String::from("user"),
             password: String::from("password"),
-            sub_cloud_topic: String::from("hems/into-edge/test-topic"),
+            sub_cloud_topic: vec![String::from("cloud/into-edge/test-topic")],
         },
         EdgeConfig {
             broker: String::from("localhost"),
             port: 6379,
             db: 0,
             _password: String::from(""),
-            sub_edge_topic: String::from("hems/outof-edge/test-topic"),
+            sub_edge_topic: vec![String::from("cloud/test-topic")],
         },
     )
 }

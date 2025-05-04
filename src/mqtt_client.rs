@@ -1,4 +1,5 @@
 use crate::config::CloudConfig;
+use crate::sink::SinkPublisher;
 use anyhow;
 use log::{debug, error, info};
 use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
@@ -125,5 +126,12 @@ impl MqttClient {
                 }
             }
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl SinkPublisher for MqttClient {
+    async fn publish(&self, topic: &str, payload: &str) -> anyhow::Result<()> {
+        self.publish(topic, payload).await
     }
 }

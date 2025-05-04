@@ -1,6 +1,7 @@
 use crate::config::{CloudConfig, EdgeConfig};
 use crate::mqtt_client::MqttClient;
 use crate::redis_client::RedisClient;
+use crate::sink::SinkPublisher;
 use anyhow;
 use log::{debug, error, info};
 use std::sync::Arc;
@@ -17,18 +18,19 @@ pub async fn start_pipeline(
     let (edge_client, edge_source_rx) = RedisClient::new(edge_cfg.clone()).await?;
 
     info!("Start source task");
-    let cloud_sub_topics = vec![cloud_cfg.clone().sub_cloud_topic.clone()];
-    cloud_client.subscribe(cloud_sub_topics).await?;
+    cloud_client
+        .subscribe(cloud_cfg.clone().sub_cloud_topic.clone())
+        .await?;
 
-    let edge_sub_topics = vec![edge_cfg.clone().sub_edge_topic.clone()];
-    let pubsub_conn = edge_client.subscribe(edge_sub_topics).await?;
+    let pubsub_conn = edge_client
+        .subscribe(edge_cfg.clone().sub_edge_topic.clone())
+        .await?;
 
-    let cloud_sub_topics = vec![cloud_cfg.clone().sub_cloud_topic.clone()];
     let cloud_source_task = tokio::spawn(MqttClient::handle_events(
         cloud_client.client(),
         eventloop,
         cloud_client.event_sender(),
-        cloud_sub_topics,
+        cloud_cfg.clone().sub_cloud_topic.clone(),
         shutdown_token.clone(),
     ));
 
@@ -39,7 +41,7 @@ pub async fn start_pipeline(
     ));
 
     info!("Start process task");
-    let (cloud_processed_tx, mut cloud_processed_rx) = mpsc::channel::<(String, String)>(32);
+    let (cloud_processed_tx, cloud_processed_rx) = mpsc::channel::<(String, String)>(32);
     let cloud_process_task = spawn_processor(
         "cloud",
         cloud_source_rx,
@@ -47,7 +49,7 @@ pub async fn start_pipeline(
         shutdown_token.clone(),
     );
 
-    let (edge_processed_tx, mut edge_processed_rx) = mpsc::channel::<(String, String)>(32);
+    let (edge_processed_tx, edge_processed_rx) = mpsc::channel::<(String, String)>(32);
     let edge_process_task = spawn_processor(
         "edge",
         edge_source_rx,
@@ -55,69 +57,20 @@ pub async fn start_pipeline(
         shutdown_token.clone(),
     );
 
-    let shutdown_token_clone = shutdown_token.clone();
-    let cloud_sink_task = tokio::spawn(async move {
-        info!("Launching cloud-sink task");
+    info!("Start sink task");
+    let cloud_sink_task = spawn_sink(
+        "cloud-sink",
+        cloud_processed_rx,
+        Arc::new(edge_client),
+        shutdown_token.clone(),
+    );
 
-        loop {
-            tokio::select! {
-                _ = shutdown_token_clone.cancelled() => {
-                    debug!("Sink task received shutdown signal.");
-                    break;
-                }
-                maybe_processed_info = cloud_processed_rx.recv() => {
-                    match maybe_processed_info {
-                        Some((topic, msg)) => {
-                            debug!("Publishing sink message: {msg} to {topic}");
-                            if let Err(e) = cloud_client.publish(&topic, &msg).await {
-                                error!("Failed to publish message: {:?}", e);
-                            } else {
-                                debug!("Published sink message");
-                            }
-                        }
-                        None => {
-                            info!("Processed channel closed.");
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        debug!("Exiting cloud-sink task.");
-    });
-
-    let shutdown_token_clone = shutdown_token.clone();
-    let edge_sink_task = tokio::spawn(async move {
-        info!("Launching edge-sink task");
-
-        loop {
-            tokio::select! {
-                _ = shutdown_token_clone.cancelled() => {
-                    debug!("Sink task received shutdown signal.");
-                    break;
-                }
-                maybe_processed_info = edge_processed_rx.recv() => {
-                    match maybe_processed_info {
-                        Some((topic, msg)) => {
-                            debug!("Publishing sink message: {msg} to {topic}");
-                            if let Err(e) = edge_client.publish(&topic, &msg).await {
-                                error!("Failed to publish message: {:?}", e);
-                            } else {
-                                debug!("Published sink message");
-                            }
-                        }
-                        None => {
-                            info!("Processed channel closed.");
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        debug!("Exiting cloud-sink task.");
-    });
+    let edge_sink_task = spawn_sink(
+        "edge-sink",
+        edge_processed_rx,
+        Arc::new(cloud_client),
+        shutdown_token.clone(),
+    );
 
     cloud_source_task.await?;
     edge_source_task.await?;
@@ -164,5 +117,46 @@ fn spawn_processor(
                 else => break,
             }
         }
+    })
+}
+
+fn spawn_sink<P>(
+    name: &'static str,
+    mut rx: tokio::sync::mpsc::Receiver<(String, String)>,
+    publisher: Arc<P>,
+    shutdown_token: Arc<CancellationToken>,
+) -> tokio::task::JoinHandle<()>
+where
+    P: SinkPublisher,
+{
+    tokio::spawn(async move {
+        info!("Launching {name} task");
+
+        loop {
+            tokio::select! {
+                _ = shutdown_token.cancelled() => {
+                    debug!("{name} task received shutdown signal");
+                    break;
+                }
+                maybe_processed_info = rx.recv() => {
+                    match maybe_processed_info {
+                        Some((topic, msg)) => {
+                            debug!("Publishing sink message: {msg} to {topic}");
+                            if let Err(e) = publisher.publish(&topic, &msg).await {
+                                error!("Failed to publish message: {:?}", e);
+                            } else {
+                                debug!("Published sink message");
+                            }
+                        }
+                        None => {
+                            info!("{name} channel closed");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        debug!("Exiting {name} task");
     })
 }

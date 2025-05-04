@@ -17,3 +17,4 @@ futures-util = { version = "0.3.31", default-features = false, features = [
   "std",
   "sink",
 ] }
+async-trait = "0.1.88"
