@@ -1,7 +1,7 @@
 use crate::config::{CloudConfig, EdgeConfig};
-use crate::mqtt_client::MqttClient;
-use crate::redis_client::RedisClient;
-use crate::sink::SinkPublisher;
+use crate::messenger::mqtt_client::MqttClient;
+use crate::messenger::redis_client::RedisClient;
+use crate::messenger::sink::SinkPublisher;
 use anyhow;
 use log::{debug, error, info};
 use std::sync::Arc;

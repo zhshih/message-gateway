@@ -1,5 +1,5 @@
 use crate::config::CloudConfig;
-use crate::sink::SinkPublisher;
+use crate::messenger::sink::SinkPublisher;
 use anyhow;
 use log::{debug, error, info};
 use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
