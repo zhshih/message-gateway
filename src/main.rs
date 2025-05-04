@@ -1,8 +1,6 @@
 mod config;
-mod mqtt_client;
+mod messenger;
 mod pipeline;
-mod redis_client;
-mod sink;
 
 use anyhow;
 use log::{debug, error, info};

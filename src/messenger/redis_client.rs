@@ -1,5 +1,5 @@
 use crate::config::EdgeConfig;
-use crate::sink::SinkPublisher;
+use crate::messenger::sink::SinkPublisher;
 use anyhow::{self, Context};
 use futures_util::StreamExt as _;
 use log::{debug, error, info};
