@@ -1,4 +1,5 @@
 use crate::config::EdgeConfig;
+use crate::sink::SinkPublisher;
 use anyhow::{self, Context};
 use futures_util::StreamExt as _;
 use log::{debug, error, info};
@@ -96,5 +97,12 @@ impl RedisClient {
                 }
             }
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl SinkPublisher for RedisClient {
+    async fn publish(&self, topic: &str, payload: &str) -> anyhow::Result<()> {
+        self.publish(topic, payload).await
     }
 }
