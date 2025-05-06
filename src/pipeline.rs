@@ -17,12 +17,15 @@ pub async fn start_pipeline(
     let (cloud_client, eventloop, cloud_source_rx) = MqttClient::new(cloud_cfg.clone());
     let (edge_client, edge_source_rx) = RedisClient::new(edge_cfg.clone()).await?;
 
+    let shared_edge_client = Arc::new(edge_client.clone());
+    shared_edge_client.spawn_heartbeat(shutdown_token.clone());
+
     info!("Start source task");
     cloud_client
         .subscribe(cloud_cfg.clone().sub_cloud_topic.clone())
         .await?;
 
-    let pubsub_conn = edge_client
+    edge_client
         .subscribe(edge_cfg.clone().sub_edge_topic.clone())
         .await?;
 
@@ -34,11 +37,15 @@ pub async fn start_pipeline(
         shutdown_token.clone(),
     ));
 
-    let edge_source_task = tokio::spawn(RedisClient::handle_messages(
-        pubsub_conn,
-        edge_client.message_sender(),
-        shutdown_token.clone(),
-    ));
+    let shared_edge_client = Arc::new(edge_client.clone());
+    let edge_source_task = tokio::spawn({
+        let shutdown_token = shutdown_token.clone();
+        async move {
+            shared_edge_client
+                .start_handling_messages(shutdown_token)
+                .await;
+        }
+    });
 
     info!("Start process task");
     let (cloud_processed_tx, cloud_processed_rx) = mpsc::channel::<(String, String)>(32);
