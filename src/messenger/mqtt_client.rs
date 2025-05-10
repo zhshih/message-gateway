@@ -2,7 +2,7 @@ use crate::config::CloudConfig;
 use crate::messenger::sink::SinkPublisher;
 use anyhow;
 use log::{debug, error, info};
-use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS, Transport};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -16,11 +16,19 @@ pub struct MqttClient {
 impl MqttClient {
     pub fn new(cfg: CloudConfig) -> (Self, EventLoop, mpsc::Receiver<(String, String)>) {
         let client_id = cfg.client_id.clone();
-        let broker = cfg.broker.clone();
+        let mut broker = cfg.broker.clone();
         let port = cfg.port.clone();
+        let protocol = cfg.protocol.clone();
+
+        if protocol == "ws" {
+            broker = format!("ws://{broker}:{port}/mqtt");
+        }
         let mut mqtt_opts = MqttOptions::new(&client_id, &broker, port);
         mqtt_opts.set_keep_alive(Duration::from_secs(60));
         mqtt_opts.set_credentials(cfg.username.clone(), cfg.password.clone());
+        if protocol == "ws" {
+            mqtt_opts.set_transport(Transport::Ws);
+        }
 
         let (client, eventloop) = AsyncClient::new(mqtt_opts, 10);
         let (tx, rx) = mpsc::channel::<(String, String)>(32);

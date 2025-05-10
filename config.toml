@@ -1,12 +1,13 @@
 [messenger_config]
 
 [cloud_cfg]
-client_id = "mqtt-messenger-client"
-version = "V5"
+client_id = "mqtt-messenger-client-mqtt-ws"
+version = "V3"
 broker = "localhost"
-port = 1883
-username = "user"
-password = "password"
+port = 8080
+protocol = "ws"
+username = ""
+password = ""
 sub_cloud_topics = ["cloud/into-edge/test-topic"]
 
 [edge_cfg]

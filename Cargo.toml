@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-rumqttc = "0.24"
+rumqttc = { version = "0.24.0", features = ["websocket"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.6"
 serde = { version = "1.0.219", features = ["derive"] }

@@ -21,6 +21,11 @@ impl MqttClient {
         let client_id = cfg.client_id.clone();
         let broker = cfg.broker.clone();
         let port = cfg.port.clone();
+        let protocol = cfg.protocol.clone();
+
+        if protocol == "ws" {
+            panic!("Websocket does not supported in v5!");
+        }
         let mut mqtt_opts = MqttOptions::new(&client_id, &broker, port);
         mqtt_opts.set_keep_alive(Duration::from_secs(60));
         mqtt_opts.set_credentials(cfg.username.clone(), cfg.password.clone());

@@ -15,6 +15,7 @@ pub struct CloudConfig {
     pub client_id: String,
     pub version: MqttVersion,
     pub broker: String,
+    pub protocol: String,
     pub port: u16,
     pub username: String,
     pub password: String,
