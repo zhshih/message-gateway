@@ -1,8 +1,14 @@
 use log::info;
 
 #[derive(Debug, Clone)]
+pub enum MqttVersion {
+    V3,
+    V5,
+}
+#[derive(Debug, Clone)]
 pub struct CloudConfig {
     pub client_id: String,
+    pub version: MqttVersion,
     pub broker: String,
     pub port: u16,
     pub username: String,
@@ -24,6 +30,7 @@ pub fn load_config() -> (CloudConfig, EdgeConfig) {
     (
         CloudConfig {
             client_id: String::from("mqtt-messenger-client"),
+            version: MqttVersion::V5,
             broker: String::from("localhost"),
             port: 1883,
             username: String::from("user"),

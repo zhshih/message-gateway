@@ -1,5 +1,7 @@
 use crate::config::{CloudConfig, EdgeConfig};
-use crate::messenger::mqtt_client::MqttClient;
+use crate::messenger::cloud_client::{CloudClient, CloudEventLoop, create_cloud_client};
+use crate::messenger::mqtt_client::MqttClient as MqttClientV3;
+use crate::messenger::mqtt_client_v5::MqttClient as MqttClientV5;
 use crate::messenger::redis_client::RedisClient;
 use crate::messenger::sink::SinkPublisher;
 use anyhow;
@@ -14,28 +16,30 @@ pub async fn start_pipeline(
     edge_cfg: EdgeConfig,
     shutdown_token: Arc<CancellationToken>,
 ) -> anyhow::Result<()> {
-    let (cloud_client, eventloop, cloud_source_rx) = MqttClient::new(cloud_cfg.clone());
+    let (cloud_client_raw, cloud_eventloop, cloud_source_rx) =
+        create_cloud_client(cloud_cfg.clone());
     let (edge_client, edge_source_rx) = RedisClient::new(edge_cfg.clone()).await?;
+    let cloud_client = Arc::new(cloud_client_raw);
 
     let shared_edge_client = Arc::new(edge_client.clone());
     shared_edge_client.spawn_heartbeat(shutdown_token.clone());
 
     info!("Start source task");
-    cloud_client
-        .subscribe(cloud_cfg.clone().sub_cloud_topic.clone())
-        .await?;
+    match &*cloud_client {
+        CloudClient::V3(c) => c.subscribe(cloud_cfg.sub_cloud_topic.clone()).await?,
+        CloudClient::V5(c) => c.subscribe(cloud_cfg.sub_cloud_topic.clone()).await?,
+    }
 
     edge_client
         .subscribe(edge_cfg.clone().sub_edge_topic.clone())
         .await?;
 
-    let cloud_source_task = tokio::spawn(MqttClient::handle_events(
-        cloud_client.client(),
-        eventloop,
-        cloud_client.event_sender(),
-        cloud_cfg.clone().sub_cloud_topic.clone(),
+    let cloud_source_task = spawn_cloud_source(
+        &*cloud_client,
+        cloud_eventloop,
+        cloud_cfg.sub_cloud_topics.clone(),
         shutdown_token.clone(),
-    ));
+    );
 
     let shared_edge_client = Arc::new(edge_client.clone());
     let edge_source_task = tokio::spawn({
@@ -75,7 +79,7 @@ pub async fn start_pipeline(
     let edge_sink_task = spawn_sink(
         "edge-sink",
         edge_processed_rx,
-        Arc::new(cloud_client),
+        cloud_client.clone(),
         shutdown_token.clone(),
     );
 
@@ -87,6 +91,35 @@ pub async fn start_pipeline(
     edge_sink_task.await?;
 
     Ok(())
+}
+
+fn spawn_cloud_source(
+    cloud_client: &CloudClient,
+    cloud_eventloop: CloudEventLoop,
+    topics: Vec<String>,
+    shutdown_token: Arc<CancellationToken>,
+) -> JoinHandle<()> {
+    match (&*cloud_client, cloud_eventloop) {
+        (CloudClient::V3(c), CloudEventLoop::V3(eventloop)) => {
+            let client = c.client().clone();
+            let event_tx = c.event_sender();
+            let topics = topics;
+            tokio::spawn(async move {
+                MqttClientV3::handle_events(client, eventloop, event_tx, topics, shutdown_token)
+                    .await
+            })
+        }
+        (CloudClient::V5(c), CloudEventLoop::V5(eventloop)) => {
+            let client = c.client().clone();
+            let event_tx = c.event_sender();
+            let topics = topics;
+            tokio::spawn(async move {
+                MqttClientV5::handle_events(client, eventloop, event_tx, topics, shutdown_token)
+                    .await
+            })
+        }
+        _ => panic!("Mismatched cloud client and event loop version"),
+    }
 }
 
 fn spawn_processor(

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-rumqttc = "0.14"
+rumqttc = "0.24"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.6"
 serde = { version = "1.0", features = ["derive"] }
@@ -18,3 +18,4 @@ futures-util = { version = "0.3.31", default-features = false, features = [
   "sink",
 ] }
 async-trait = "0.1.88"
+bytes = "1.10.1"
