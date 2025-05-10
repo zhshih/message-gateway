@@ -42,7 +42,7 @@ impl MqttClient {
 
     pub async fn subscribe(&self, topics: Vec<String>) -> anyhow::Result<()> {
         for topic in topics {
-            info!("Subscribing to {} from cloud", topic);
+            debug!("Subscribing to {} from cloud", topic);
 
             self.client
                 .subscribe(&topic, QoS::AtMostOnce)
@@ -58,7 +58,7 @@ impl MqttClient {
     }
 
     pub async fn publish(&self, topic: &str, payload: &str) -> anyhow::Result<()> {
-        info!("Publishing to {} to {}", payload, topic);
+        debug!("Publishing to {} to {}", payload, topic);
 
         self.client
             .publish(topic, QoS::AtLeastOnce, false, payload)

@@ -44,7 +44,7 @@ impl RedisClient {
     }
 
     pub async fn publish(&self, topic: &str, payload: &str) -> anyhow::Result<()> {
-        info!("Publishing to {} to {}", payload, topic);
+        debug!("Publishing to {} to {}", payload, topic);
 
         let mut publish_conn = self
             .client
@@ -114,7 +114,7 @@ impl RedisClient {
             .collect();
 
         for topic in &topics {
-            info!("Subscribing to {} from edge", topic);
+            debug!("Subscribing to {} from edge", topic);
             pubsub_conn.subscribe(topic).await?;
             info!("Subscribed to {} from edge", topic);
         }

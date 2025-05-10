@@ -3,7 +3,7 @@ mod messenger;
 mod pipeline;
 
 use anyhow;
-use log::{debug, error, info};
+use log::{error, info};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    debug!("1");
+    info!("*** Launching main service ***");
 
     let (cloud_conf, edge_conf) = config::load_config();
     info!("Loaded conf = ({:?}, {:?}", cloud_conf, edge_conf);
@@ -26,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    debug!("2");
+    info!("*** Launched main service ***");
 
     tokio::signal::ctrl_c().await?;
     info!("Starting shutdown...");
