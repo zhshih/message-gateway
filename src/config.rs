@@ -1,11 +1,16 @@
+use anyhow;
 use log::info;
+use serde::Deserialize;
+use std::path::Path;
+use tokio::fs;
 
-#[derive(Debug, Clone)]
-pub enum MqttVersion {
-    V3,
-    V5,
+#[derive(Deserialize, Debug, Clone)]
+pub struct MessengerConfig {
+    pub cloud_cfg: CloudConfig,
+    pub edge_cfg: EdgeConfig,
 }
-#[derive(Debug, Clone)]
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct CloudConfig {
     pub client_id: String,
     pub version: MqttVersion,
@@ -13,36 +18,34 @@ pub struct CloudConfig {
     pub port: u16,
     pub username: String,
     pub password: String,
-    pub sub_cloud_topic: Vec<String>,
+    pub sub_cloud_topics: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct EdgeConfig {
     pub broker: String,
     pub port: u16,
     pub db: u16,
     pub _password: String,
-    pub sub_edge_topic: Vec<String>,
+    pub sub_edge_topics: Vec<String>,
 }
 
-pub fn load_config() -> (CloudConfig, EdgeConfig) {
+#[derive(Deserialize, Debug, Clone)]
+pub enum MqttVersion {
+    V3,
+    V5,
+}
+
+pub async fn load_config(cfg_path: &Path) -> anyhow::Result<MessengerConfig> {
+    let file = fs::read(cfg_path)
+        .await
+        .expect("could not read configuration file")
+        .iter()
+        .map(|c| *c as char)
+        .collect::<String>();
+
+    let cfg: MessengerConfig = toml::from_str(&file).expect("invalid format in configuration file");
+
     info!("config loaded");
-    (
-        CloudConfig {
-            client_id: String::from("mqtt-messenger-client"),
-            version: MqttVersion::V5,
-            broker: String::from("localhost"),
-            port: 1883,
-            username: String::from("user"),
-            password: String::from("password"),
-            sub_cloud_topic: vec![String::from("cloud/into-edge/test-topic")],
-        },
-        EdgeConfig {
-            broker: String::from("localhost"),
-            port: 6379,
-            db: 0,
-            _password: String::from(""),
-            sub_edge_topic: vec![String::from("cloud/test-topic")],
-        },
-    )
+    anyhow::Ok(cfg)
 }

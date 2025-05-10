@@ -1,4 +1,4 @@
-use crate::config::{CloudConfig, EdgeConfig};
+use crate::config::MessengerConfig;
 use crate::messenger::cloud_client::{CloudClient, CloudEventLoop, create_cloud_client};
 use crate::messenger::mqtt_client::MqttClient as MqttClientV3;
 use crate::messenger::mqtt_client_v5::MqttClient as MqttClientV5;
@@ -12,10 +12,11 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 pub async fn start_pipeline(
-    cloud_cfg: CloudConfig,
-    edge_cfg: EdgeConfig,
+    config: MessengerConfig,
     shutdown_token: Arc<CancellationToken>,
 ) -> anyhow::Result<()> {
+    let cloud_cfg = config.cloud_cfg;
+    let edge_cfg = config.edge_cfg;
     let (cloud_client_raw, cloud_eventloop, cloud_source_rx) =
         create_cloud_client(cloud_cfg.clone());
     let (edge_client, edge_source_rx) = RedisClient::new(edge_cfg.clone()).await?;
@@ -26,12 +27,12 @@ pub async fn start_pipeline(
 
     info!("Start source task");
     match &*cloud_client {
-        CloudClient::V3(c) => c.subscribe(cloud_cfg.sub_cloud_topic.clone()).await?,
-        CloudClient::V5(c) => c.subscribe(cloud_cfg.sub_cloud_topic.clone()).await?,
+        CloudClient::V3(c) => c.subscribe(cloud_cfg.sub_cloud_topics.clone()).await?,
+        CloudClient::V5(c) => c.subscribe(cloud_cfg.sub_cloud_topics.clone()).await?,
     }
 
     edge_client
-        .subscribe(edge_cfg.clone().sub_edge_topic.clone())
+        .subscribe(edge_cfg.clone().sub_edge_topics.clone())
         .await?;
 
     let cloud_source_task = spawn_cloud_source(

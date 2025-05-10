@@ -1,0 +1,17 @@
+[messenger_config]
+
+[cloud_cfg]
+client_id = "mqtt-messenger-client"
+version = "V5"
+broker = "localhost"
+port = 1883
+username = "user"
+password = "password"
+sub_cloud_topics = ["cloud/into-edge/test-topic"]
+
+[edge_cfg]
+broker = "localhost"
+port = 6379
+db = 0
+_password = ""
+sub_edge_topics = ["cloud/test-topic"]
