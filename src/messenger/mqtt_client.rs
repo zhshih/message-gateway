@@ -1,8 +1,11 @@
-use crate::config::CloudConfig;
+use crate::config::{CloudConfig, TransportProtocol};
 use crate::messenger::sink::SinkPublisher;
 use anyhow;
 use log::{debug, error, info};
-use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS, Transport};
+use rumqttc::{
+    AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS, TlsConfiguration, Transport,
+};
+use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -15,20 +18,7 @@ pub struct MqttClient {
 
 impl MqttClient {
     pub fn new(cfg: CloudConfig) -> (Self, EventLoop, mpsc::Receiver<(String, String)>) {
-        let client_id = cfg.client_id.clone();
-        let mut broker = cfg.broker.clone();
-        let port = cfg.port.clone();
-        let protocol = cfg.protocol.clone();
-
-        if protocol == "ws" {
-            broker = format!("ws://{broker}:{port}/mqtt");
-        }
-        let mut mqtt_opts = MqttOptions::new(&client_id, &broker, port);
-        mqtt_opts.set_keep_alive(Duration::from_secs(60));
-        mqtt_opts.set_credentials(cfg.username.clone(), cfg.password.clone());
-        if protocol == "ws" {
-            mqtt_opts.set_transport(Transport::Ws);
-        }
+        let mqtt_opts = Self::build_mqtt_options(&cfg);
 
         let (client, eventloop) = AsyncClient::new(mqtt_opts, 10);
         let (tx, rx) = mpsc::channel::<(String, String)>(32);
@@ -134,6 +124,95 @@ impl MqttClient {
                 }
             }
         }
+    }
+
+    fn build_mqtt_options(cfg: &CloudConfig) -> MqttOptions {
+        let mut broker = cfg.broker.clone();
+        if cfg.protocol == TransportProtocol::Ws {
+            let protocol = if cfg.auth.mtls_enabled { "wss" } else { "ws" };
+            broker = format!("{}://{}:{}/mqtt", protocol, broker, cfg.port);
+        }
+        let mut mqtt_opts = MqttOptions::new(&cfg.client_id, &broker, cfg.port);
+        mqtt_opts.set_keep_alive(Duration::from_secs(60));
+        Self::configure_auth(cfg, &mut mqtt_opts).expect("Configure auth failed");
+
+        mqtt_opts
+    }
+
+    fn configure_auth(
+        cfg: &CloudConfig,
+        mqtt_opts: &mut MqttOptions,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let tls_config = if cfg.auth.mtls_enabled {
+            let mtls_cfg = cfg.auth.mtls.as_ref().ok_or("mTLS config missing")?;
+            let ca = fs::read(&mtls_cfg.ca_file)?;
+            let client_cert = fs::read(&mtls_cfg.cert_file)?;
+            let client_key = fs::read(&mtls_cfg.key_file)?;
+            Some(TlsConfiguration::Simple {
+                ca,
+                client_auth: Some((client_cert, client_key)),
+                alpn: None,
+            })
+        } else {
+            None
+        };
+
+        match (&cfg.protocol, cfg.auth.basic_enabled, cfg.auth.mtls_enabled) {
+            (TransportProtocol::Ws, true, true) => {
+                info!("MQTT over Websocket with basic auth and mTLS enabled");
+                mqtt_opts.set_credentials(
+                    cfg.auth.basic.as_ref().unwrap().username.clone(),
+                    cfg.auth.basic.as_ref().unwrap().password.clone(),
+                );
+                let tls_config = tls_config.ok_or("TLS config required for WSS")?;
+                mqtt_opts.set_transport(Transport::Wss(tls_config));
+            }
+            (TransportProtocol::Ws, true, false) => {
+                info!("MQTT over Websocket with basic auth and no-mTLS enabled");
+                mqtt_opts.set_credentials(
+                    cfg.auth.basic.as_ref().unwrap().username.clone(),
+                    cfg.auth.basic.as_ref().unwrap().password.clone(),
+                );
+                mqtt_opts.set_transport(Transport::Ws);
+            }
+            (TransportProtocol::Ws, false, true) => {
+                info!("MQTT over Websocket with no-basic auth and mTLS enabled");
+                let tls_config = tls_config.ok_or("TLS config required for TLS")?;
+                mqtt_opts.set_transport(Transport::Wss(tls_config));
+            }
+            (TransportProtocol::Ws, false, false) => {
+                info!("MQTT over Websocket with no-basic auth and no-mTLS enabled");
+                mqtt_opts.set_transport(Transport::Ws);
+            }
+            (TransportProtocol::Tcp, true, true) => {
+                info!("MQTT over TCP with basic auth and mTLS enabled");
+                mqtt_opts.set_credentials(
+                    cfg.auth.basic.as_ref().unwrap().username.clone(),
+                    cfg.auth.basic.as_ref().unwrap().password.clone(),
+                );
+                let tls_config = tls_config.ok_or("TLS config required for TLS")?;
+                mqtt_opts.set_transport(Transport::Tls(tls_config));
+            }
+            (TransportProtocol::Tcp, true, false) => {
+                info!("MQTT over TCP with basic auth and no-mTLS enabled");
+                mqtt_opts.set_credentials(
+                    cfg.auth.basic.as_ref().unwrap().username.clone(),
+                    cfg.auth.basic.as_ref().unwrap().password.clone(),
+                );
+                mqtt_opts.set_transport(Transport::Tcp);
+            }
+            (TransportProtocol::Tcp, false, true) => {
+                info!("MQTT over TCP with no-basic auth and mTLS enabled");
+                let tls_config = tls_config.ok_or("TLS config required for TLS")?;
+                mqtt_opts.set_transport(Transport::Tls(tls_config));
+            }
+            _ => {
+                info!("MQTT over TCP with no-basic auth and no-mTLS enabled");
+                mqtt_opts.set_transport(Transport::Tcp);
+            }
+        }
+
+        Ok(())
     }
 }
 

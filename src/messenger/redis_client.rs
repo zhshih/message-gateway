@@ -23,6 +23,13 @@ impl RedisClient {
     pub async fn new(cfg: EdgeConfig) -> anyhow::Result<(Self, mpsc::Receiver<(String, String)>)> {
         let connection_url = format!("redis://{}:{}/{}", cfg.broker, cfg.port, cfg.db);
 
+        if cfg.auth.basic_enabled {
+            info!("Basic auth enabled");
+            info!("Currently no auth is enforced");
+        } else {
+            info!("No auth enabled");
+        }
+
         let client = Client::open(connection_url).context("Failed to open Redis connection")?;
         let (tx, rx) = mpsc::channel::<(String, String)>(32);
 

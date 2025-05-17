@@ -1,6 +1,7 @@
 use anyhow;
 use log::info;
 use serde::Deserialize;
+use serde::de::{self, Deserializer};
 use std::path::Path;
 use tokio::fs;
 
@@ -15,11 +16,63 @@ pub struct CloudConfig {
     pub client_id: String,
     pub version: MqttVersion,
     pub broker: String,
-    pub protocol: String,
+    pub protocol: TransportProtocol,
     pub port: u16,
+    pub sub_cloud_topics: Vec<String>,
+    pub auth: AuthConfig,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub enum MqttVersion {
+    V3,
+    V5,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransportProtocol {
+    Tcp,
+    Ws,
+}
+
+impl Default for TransportProtocol {
+    fn default() -> Self {
+        TransportProtocol::Tcp
+    }
+}
+
+impl<'de> Deserialize<'de> for TransportProtocol {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: Option<String> = Option::deserialize(deserializer)?;
+        match s.as_deref().unwrap_or("tcp") {
+            "" | "tcp" => Ok(TransportProtocol::Tcp),
+            "ws" => Ok(TransportProtocol::Ws),
+            other => Err(de::Error::unknown_variant(other, &["tcp", "ws"])),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct AuthConfig {
+    pub basic_enabled: bool,
+    pub mtls_enabled: bool,
+    pub basic: Option<BasicAuth>,
+    pub mtls: Option<MtlsConfig>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct BasicAuth {
     pub username: String,
     pub password: String,
-    pub sub_cloud_topics: Vec<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct MtlsConfig {
+    pub ca_file: String,
+    pub cert_file: String,
+    pub key_file: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -27,14 +80,15 @@ pub struct EdgeConfig {
     pub broker: String,
     pub port: u16,
     pub db: u16,
-    pub _password: String,
     pub sub_edge_topics: Vec<String>,
+    pub auth: EdgeAuthConfig,
 }
 
-#[derive(Deserialize, Debug, Clone)]
-pub enum MqttVersion {
-    V3,
-    V5,
+#[derive(Deserialize, Debug, Clone, Default)]
+#[allow(dead_code)]
+pub struct EdgeAuthConfig {
+    pub basic_enabled: bool,
+    pub basic: Option<BasicAuth>,
 }
 
 pub async fn load_config(cfg_path: &Path) -> anyhow::Result<MessengerConfig> {
