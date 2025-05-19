@@ -81,14 +81,7 @@ pub struct EdgeConfig {
     pub port: u16,
     pub db: u16,
     pub sub_edge_topics: Vec<String>,
-    pub auth: EdgeAuthConfig,
-}
-
-#[derive(Deserialize, Debug, Clone, Default)]
-#[allow(dead_code)]
-pub struct EdgeAuthConfig {
-    pub basic_enabled: bool,
-    pub basic: Option<BasicAuth>,
+    pub auth: AuthConfig,
 }
 
 pub async fn load_config(cfg_path: &Path) -> anyhow::Result<MessengerConfig> {

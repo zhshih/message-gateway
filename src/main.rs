@@ -4,6 +4,7 @@ mod pipeline;
 
 use anyhow;
 use log::{debug, error, info};
+use rustls;
 use std::path::Path;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -13,6 +14,11 @@ const CONF_FILENAME: &str = "config.toml";
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
+
+    info!("*** Installing default CryptoProvider ***");
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install crypto provider");
 
     info!("*** Launching main service ***");
 

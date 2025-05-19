@@ -5,9 +5,13 @@ use futures_util::StreamExt as _;
 use log::{debug, error, info, warn};
 use redis::aio::MultiplexedConnection;
 use redis::cmd;
-use redis::{AsyncCommands, Client};
+use redis::{AsyncCommands, Client, ClientTlsConfig, TlsCertificates};
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::{
+    fs::File,
+    io::{BufReader, Read},
+};
 use tokio::sync::{Mutex, mpsc};
 use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
@@ -21,16 +25,51 @@ pub struct RedisClient {
 
 impl RedisClient {
     pub async fn new(cfg: EdgeConfig) -> anyhow::Result<(Self, mpsc::Receiver<(String, String)>)> {
-        let connection_url = format!("redis://{}:{}/{}", cfg.broker, cfg.port, cfg.db);
+        let connection_url = Self::build_redis_connection(&cfg);
 
-        if cfg.auth.basic_enabled {
-            info!("Basic auth enabled");
-            info!("Currently no auth is enforced");
+        let client = if cfg.auth.mtls_enabled {
+            info!("mTLS auth enabled");
+
+            let mut ca = Vec::new();
+            BufReader::new(
+                File::open(cfg.auth.mtls.as_ref().unwrap().ca_file.as_str())
+                    .expect("Failed to find CA certificate"),
+            )
+            .read_to_end(&mut ca)
+            .expect("Failed to read CA certificate");
+
+            let mut cert = Vec::new();
+            BufReader::new(
+                File::open(cfg.auth.mtls.as_ref().unwrap().cert_file.as_str())
+                    .expect("Failed to find client certificate"),
+            )
+            .read_to_end(&mut cert)
+            .expect("Failed to read client certificate");
+
+            let mut key = Vec::new();
+            BufReader::new(
+                File::open(cfg.auth.mtls.as_ref().unwrap().key_file.as_str())
+                    .expect("Failed to find client key"),
+            )
+            .read_to_end(&mut key)
+            .expect("Failed to read client key");
+
+            Client::build_with_tls(
+                connection_url,
+                TlsCertificates {
+                    client_tls: Some(ClientTlsConfig {
+                        client_cert: cert,
+                        client_key: key,
+                    }),
+                    root_cert: Some(ca),
+                },
+            )
+            .expect("Unable to build Redis client")
         } else {
-            info!("No auth enabled");
-        }
+            info!("Basic auth enabled");
+            Client::open(connection_url).context("Failed to open Redis connection")?
+        };
 
-        let client = Client::open(connection_url).context("Failed to open Redis connection")?;
         let (tx, rx) = mpsc::channel::<(String, String)>(32);
 
         let redis_client = RedisClient {
@@ -76,7 +115,7 @@ impl RedisClient {
                         break;
                     }
                     _ = sleep(Duration::from_secs(5)) => {
-                        match client.get_multiplexed_async_connection().await {
+                        match client.get_multiplexed_tokio_connection().await {
                             Ok(mut conn) => {
                                 let alive = is_connection_alive(&mut conn).await;
                                 info!("Redis heartbeat: alive = {alive}");
@@ -146,10 +185,34 @@ impl RedisClient {
 
         Err(anyhow::anyhow!("PubSub connection lost"))
     }
+
+    fn build_redis_connection(cfg: &EdgeConfig) -> String {
+        if cfg.auth.basic_enabled && !cfg.auth.mtls_enabled {
+            format!(
+                "redis://{}:{}@{}:{}/{}",
+                cfg.auth.basic.as_ref().unwrap().username,
+                cfg.auth.basic.as_ref().unwrap().password,
+                cfg.broker,
+                cfg.port,
+                cfg.db
+            )
+        } else if cfg.auth.mtls_enabled {
+            format!(
+                "rediss://{}:{}@{}:{}/{}",
+                cfg.auth.basic.as_ref().unwrap().username,
+                cfg.auth.basic.as_ref().unwrap().password,
+                cfg.broker,
+                cfg.port,
+                cfg.db
+            )
+        } else {
+            format!("redis://{}:{}/{}", cfg.broker, cfg.port, cfg.db)
+        }
+    }
 }
 
 async fn is_connection_alive(conn: &mut MultiplexedConnection) -> bool {
-    cmd("PING").query_async::<_, String>(conn).await.is_ok()
+    cmd("PING").query_async::<String>(conn).await.is_ok()
 }
 
 #[async_trait::async_trait]

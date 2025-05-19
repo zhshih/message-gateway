@@ -29,10 +29,17 @@ db = 0
 sub_edge_topics = ["cloud/test-topic"]
 
 [edge_cfg.auth]
-# Can enable basic or not
-basic_enabled = false
+# Can enable basic and mtls if needed
+basic_enabled = true
+mtls_enabled = true
 
 # --- Basic Auth Fields (conditional) ---
 [edge_cfg.auth.basic] # Active if basic_enabled = true
-username = ""
-password = ""
+username = "user"
+password = "password"
+
+# --- mTLS Fields (conditional) ---
+[edge_cfg.auth.mtls] # Active if mtls_enabled = true
+ca_file = "certs/ca.crt"
+cert_file = "certs/client.crt"
+key_file = "certs/client.key"
