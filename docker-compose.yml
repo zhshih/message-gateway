@@ -1,0 +1,46 @@
+services:
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379" # Default (non-mTLS)
+      - "8379:8379" # mTLS
+    volumes:
+      - ./data/redis:/data
+      - ./config/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./config/redis/certs:/certs:ro
+    command: redis-server /usr/local/etc/redis/redis.conf --appendonly yes
+    restart: "no" # Ensure it doesn't restart automatically
+
+  mqtt:
+    image: eclipse-mosquitto
+    container_name: mqtt
+    ports:
+      - "1883:1883" # Default MQTT
+      - "1884:1884" # MQTT with auth
+      - "8080:8080" # MQTT over WebSockets
+      - "8081:8081" # MQTT over WebSockets with auth
+      - "8883:8883" # MQTT mTLS
+      - "8884:8884" # MQTT over WebSockets mTLS
+    volumes:
+      - ./data/mosquitto:/mosquitto/data
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./config/mosquitto/pwfile:/mosquitto/config/pwfile:ro
+      - ./config/mosquitto/certs:/mosquitto/config/certs:ro
+    restart: "no" # Ensure it doesn't restart automatically
+
+  message-gateway:
+    image: message-gateway:latest
+    container_name: message-gateway
+    depends_on:
+      - redis
+      - mqtt
+    volumes:
+      - ./config/message-gateway/config.toml:/app/config.toml:ro
+      - ./config/message-gateway/certs:/app/certs:ro
+    restart: "no" # Ensure it doesn't restart automatically
+
+# Networks (optional, you can leave it as default if you want them to share the same network)
+networks:
+  default:
+    name: mqtt5-network

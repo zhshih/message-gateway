@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
-const CONF_FILENAME: &str = "config.toml";
+const CONF_FILENAME: &str = "config/message-gateway/config.toml";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
