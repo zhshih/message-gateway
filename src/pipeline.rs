@@ -27,18 +27,18 @@ pub async fn start_pipeline(
 
     info!("Start source task");
     match &*cloud_client {
-        CloudClient::V3(c) => c.subscribe(cloud_cfg.sub_cloud_topics.clone()).await?,
-        CloudClient::V5(c) => c.subscribe(cloud_cfg.sub_cloud_topics.clone()).await?,
+        CloudClient::V3(c) => c.subscribe(cloud_cfg.sub_topics.clone()).await?,
+        CloudClient::V5(c) => c.subscribe(cloud_cfg.sub_topics.clone()).await?,
     }
 
     edge_client
-        .subscribe(edge_cfg.clone().sub_edge_topics.clone())
+        .subscribe(edge_cfg.clone().sub_topics.clone())
         .await?;
 
     let cloud_source_task = spawn_cloud_source(
         &*cloud_client,
         cloud_eventloop,
-        cloud_cfg.sub_cloud_topics.clone(),
+        cloud_cfg.sub_topics.clone(),
         shutdown_token.clone(),
     );
 

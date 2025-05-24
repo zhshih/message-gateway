@@ -18,8 +18,22 @@ pub struct CloudConfig {
     pub broker: String,
     pub protocol: TransportProtocol,
     pub port: u16,
-    pub sub_cloud_topics: Vec<String>,
+    pub sub_topics: Vec<String>,
     pub auth: AuthConfig,
+}
+
+impl Default for CloudConfig {
+    fn default() -> Self {
+        Self {
+            client_id: "default_client".to_string(),
+            version: MqttVersion::V3,
+            broker: "localhost".to_string(),
+            protocol: TransportProtocol::Tcp,
+            port: 1883,
+            sub_topics: vec![],
+            auth: AuthConfig::default(),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -62,13 +76,13 @@ pub struct AuthConfig {
     pub mtls: Option<MtlsConfig>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct BasicAuth {
     pub username: String,
     pub password: String,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct MtlsConfig {
     pub ca_file: String,
     pub cert_file: String,
@@ -80,8 +94,20 @@ pub struct EdgeConfig {
     pub broker: String,
     pub port: u16,
     pub db: u16,
-    pub sub_edge_topics: Vec<String>,
+    pub sub_topics: Vec<String>,
     pub auth: AuthConfig,
+}
+
+impl Default for EdgeConfig {
+    fn default() -> Self {
+        Self {
+            broker: "localhost".to_string(),
+            port: 6379,
+            db: 0,
+            sub_topics: vec![],
+            auth: AuthConfig::default(),
+        }
+    }
 }
 
 pub async fn load_config(cfg_path: &Path) -> anyhow::Result<MessengerConfig> {
