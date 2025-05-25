@@ -1,5 +1,4 @@
 use anyhow;
-use log::info;
 use serde::Deserialize;
 use serde::de::{self, Deserializer};
 use std::path::Path;
@@ -120,6 +119,5 @@ pub async fn load_config(cfg_path: &Path) -> anyhow::Result<MessengerConfig> {
 
     let cfg: MessengerConfig = toml::from_str(&file).expect("invalid format in configuration file");
 
-    info!("config loaded");
     anyhow::Ok(cfg)
 }

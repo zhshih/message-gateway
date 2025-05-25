@@ -3,8 +3,9 @@ mod messenger;
 mod pipeline;
 
 use anyhow;
-use log::{debug, error, info};
+use log::{error, info};
 use rustls;
+use std::env;
 use std::path::Path;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -22,8 +23,9 @@ async fn main() -> anyhow::Result<()> {
 
     info!("*** Launching main service ***");
 
-    let cfg_path = Path::new(CONF_FILENAME);
-    debug!("loading config from file {:?}", cfg_path);
+    let cfg_path_str = env::var("CONFIG_PATH").unwrap_or_else(|_| CONF_FILENAME.to_string());
+    let cfg_path = Path::new(&cfg_path_str);
+    info!("loading config from file {:?}", cfg_path);
     let result = config::load_config(cfg_path).await;
     let messenger_cfg = match result {
         Ok(messenger_cfg) => {
