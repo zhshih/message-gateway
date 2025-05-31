@@ -2,9 +2,7 @@ mod config;
 mod messenger;
 mod pipeline;
 
-use anyhow;
 use log::{error, info};
-use rustls;
 use std::env;
 use std::path::Path;
 use std::sync::Arc;

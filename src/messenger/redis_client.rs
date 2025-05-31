@@ -98,7 +98,7 @@ impl RedisClient {
             .await
             .context("Failed to get multiplexed async connection")?;
 
-        let _: () = publish_conn.publish(&topic, payload).await?;
+        let _: () = publish_conn.publish(topic, payload).await?;
 
         info!("Published to {} to {}", payload, topic);
         Ok(())

@@ -4,7 +4,6 @@ use crate::messenger::mqtt_client::MqttClient as MqttClientV3;
 use crate::messenger::mqtt_client_v5::MqttClient as MqttClientV5;
 use crate::messenger::redis_client::RedisClient;
 use crate::messenger::sink::SinkPublisher;
-use anyhow;
 use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -36,7 +35,7 @@ pub async fn start_pipeline(
         .await?;
 
     let cloud_source_task = spawn_cloud_source(
-        &*cloud_client,
+        &cloud_client,
         cloud_eventloop,
         cloud_cfg.sub_topics.clone(),
         shutdown_token.clone(),
@@ -100,22 +99,20 @@ fn spawn_cloud_source(
     topics: Vec<String>,
     shutdown_token: Arc<CancellationToken>,
 ) -> JoinHandle<()> {
-    match (&*cloud_client, cloud_eventloop) {
+    match (&cloud_client, cloud_eventloop) {
         (CloudClient::V3(c), CloudEventLoop::V3(eventloop)) => {
             let client = c.client().clone();
             let event_tx = c.event_sender();
-            let topics = topics;
             tokio::spawn(async move {
-                MqttClientV3::handle_events(client, eventloop, event_tx, topics, shutdown_token)
+                MqttClientV3::handle_events(client, *eventloop, event_tx, topics, shutdown_token)
                     .await
             })
         }
         (CloudClient::V5(c), CloudEventLoop::V5(eventloop)) => {
             let client = c.client().clone();
             let event_tx = c.event_sender();
-            let topics = topics;
             tokio::spawn(async move {
-                MqttClientV5::handle_events(client, eventloop, event_tx, topics, shutdown_token)
+                MqttClientV5::handle_events(client, *eventloop, event_tx, topics, shutdown_token)
                     .await
             })
         }
@@ -140,14 +137,10 @@ fn spawn_processor(
                     break;
                 }
                 Some((mut topic, msg)) = source_rx.recv() => {
-                    if name == "cloud" {
-                        if let Some(_) = topic.find("/into-edge") {
-                            topic = topic.replace("/into-edge", "");
-                        }
-                    } else if name == "edge" {
-                        if let Some(_) = topic.find("/outof-edge") {
-                            topic = topic.replace("/outof-edge", "");
-                        }
+                    if name == "cloud" && topic.contains("/into-edge") {
+                        topic = topic.replace("/into-edge", "");
+                    } else if name == "edge" && topic.contains("/outof-edge") {
+                        topic = topic.replace("/outof-edge", "");
                     }
                     debug!("Processed message from {name}: ({topic}, {msg})");
                     if processed_tx.send((topic, msg)).await.is_err() {

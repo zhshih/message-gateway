@@ -10,8 +10,8 @@ pub enum CloudClient {
 }
 
 pub enum CloudEventLoop {
-    V3(rumqttc::EventLoop),
-    V5(rumqttc::v5::EventLoop),
+    V3(Box<rumqttc::EventLoop>),
+    V5(Box<rumqttc::v5::EventLoop>),
 }
 
 pub fn create_cloud_client(
@@ -24,11 +24,19 @@ pub fn create_cloud_client(
     match cfg.version {
         MqttVersion::V3 => {
             let (client, eventloop, rx) = mqtt_client_v3::MqttClient::new(cfg);
-            (CloudClient::V3(client), CloudEventLoop::V3(eventloop), rx)
+            (
+                CloudClient::V3(client),
+                CloudEventLoop::V3(Box::new(eventloop)),
+                rx,
+            )
         }
         MqttVersion::V5 => {
             let (client, eventloop, rx) = mqtt_client_v5::MqttClient::new(cfg);
-            (CloudClient::V5(client), CloudEventLoop::V5(eventloop), rx)
+            (
+                CloudClient::V5(client),
+                CloudEventLoop::V5(Box::new(eventloop)),
+                rx,
+            )
         }
     }
 }

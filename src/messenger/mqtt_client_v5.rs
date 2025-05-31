@@ -37,7 +37,7 @@ impl MqttClient {
     }
 
     pub fn client(&self) -> AsyncClient {
-        return self.client.clone();
+        self.client.clone()
     }
 
     pub async fn subscribe(&self, topics: Vec<String>) -> anyhow::Result<()> {

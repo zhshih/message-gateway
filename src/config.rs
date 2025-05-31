@@ -1,4 +1,3 @@
-use anyhow;
 use serde::Deserialize;
 use serde::de::{self, Deserializer};
 use std::path::Path;
@@ -41,16 +40,11 @@ pub enum MqttVersion {
     V5,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum TransportProtocol {
+    #[default]
     Tcp,
     Ws,
-}
-
-impl Default for TransportProtocol {
-    fn default() -> Self {
-        TransportProtocol::Tcp
-    }
 }
 
 impl<'de> Deserialize<'de> for TransportProtocol {
