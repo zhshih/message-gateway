@@ -1,5 +1,4 @@
 use crate::config::{CloudConfig, TransportProtocol};
-use crate::messenger::sink::SinkPublisher;
 use anyhow;
 use log::{debug, error, info};
 use rumqttc::{
@@ -53,6 +52,32 @@ impl MqttClient {
             info!("Subscribed to {} from cloud", topic);
         }
         Ok(())
+    }
+
+    pub fn start_bridging_task(
+        self: Arc<Self>,
+        mut rx: mpsc::Receiver<(String, String)>,
+        shutdown_token: Arc<CancellationToken>,
+    ) {
+        tokio::spawn(async move {
+            info!("Launching bridging task");
+
+            loop {
+                tokio::select! {
+                    _ = shutdown_token.cancelled() => {
+                        debug!("Bridging task received shutdown signal");
+                        break;
+                    }
+                    Some((topic, msg)) = rx.recv() => {
+                        info!("Bridging {topic} and {msg}");
+                        if let Err(e) = self.publish(&topic, &msg).await {
+                            error!("Failed to bridge to topic {topic}: {e}");
+                        }
+                    }
+                    else => break,
+                }
+            }
+        });
     }
 
     pub async fn publish(&self, topic: &str, payload: &str) -> anyhow::Result<()> {
@@ -213,12 +238,5 @@ impl MqttClient {
         }
 
         Ok(())
-    }
-}
-
-#[async_trait::async_trait]
-impl SinkPublisher for MqttClient {
-    async fn publish(&self, topic: &str, payload: &str) -> anyhow::Result<()> {
-        self.publish(topic, payload).await
     }
 }

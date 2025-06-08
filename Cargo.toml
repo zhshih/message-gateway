@@ -21,3 +21,4 @@ async-trait = "0.1.88"
 bytes = "1.10.1"
 toml = "0.8.22"
 rustls = { version = "0.23", features = ["std", "ring"] }
+rand = "0.9.1"
