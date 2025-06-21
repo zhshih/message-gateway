@@ -1,45 +1,34 @@
 # -------- Build Stage --------
-FROM debian:bookworm-slim AS builder
+FROM rustlang/rust:nightly-slim AS builder
 
-RUN apt-get update && \
-    apt-get install -y \
-    curl \
-    build-essential \
+RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
-ENV PATH="/root/.cargo/bin:${PATH}"
+    build-essential \
+    clang \
+    cmake
 
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release || true
+COPY src ./src
 
-COPY . .
-RUN cargo build --release
+RUN cargo +nightly build --release
 
 # -------- Runtime Stage --------
-FROM debian:bookworm-slim
+FROM ubuntu:22.04
 
-RUN apt-get update && \
-    apt-get install -y \
-    ca-certificates \
-    libssl3 \
-    libc6 \
-    libgcc1 \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN groupadd --gid 1000 appuser && \
-    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+RUN mkdir -p /app/certs && \
+    useradd -m appuser
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/message-gateway .
-COPY --chown=appuser:appuser config.toml .
+COPY --from=builder /app/target/release/message-gateway ./message-gateway
+COPY config.toml ./config.toml
 
 RUN chown -R appuser:appuser /app
 
@@ -49,4 +38,4 @@ ENV CONFIG_PATH=/app/config.toml \
     CERT_PATH=/app/certs \
     RUST_LOG=info
 
-CMD ["/app/message-gateway"]
+ENTRYPOINT ["./message-gateway"]
